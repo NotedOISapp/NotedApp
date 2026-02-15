@@ -17,7 +17,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </div>
 
               <nav className="space-y-1">
-                <NavItem href="/dashboard" label="Dashboard" icon="⚡" active />
+                <NavItem href="/" label="Dashboard" icon="⚡" active />
                 <NavItem href="/hub" label="The Hub" icon="💬" />
                 <NavItem href="/journal" label="Journal" icon="📔" />
                 <NavItem href="/agents" label="Agents" icon="🤖" />
