@@ -67,3 +67,11 @@ export const deploys = pgTable("deploys", {
     url: text("url"),
     deployedAt: timestamp("deployed_at"),
 });
+
+// 7. Boss Memory (Persistent Decision Log)
+export const bossMemory = pgTable("boss_memory", {
+    id: uuid("id").defaultRandom().primaryKey(),
+    content: text("content").notNull(),
+    category: text("category").default('NOTE'), // "DECISION", "NOTE", "REVIEW", "CONTEXT"
+    createdAt: timestamp("created_at").defaultNow(),
+});

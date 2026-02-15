@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "@/src/db";
-import { agents, inboxItems } from "@/src/db/schema";
-import { ilike } from "drizzle-orm";
+import { agents, inboxItems, bossMemory } from "@/src/db/schema";
+import { ilike, desc, eq } from "drizzle-orm";
 
-// Vercel Hobby max timeout (prevents early kill during AI calls)
+// Vercel Hobby max timeout
 export const maxDuration = 60;
 
 // 1. Env Vars
@@ -13,35 +13,202 @@ const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 
 // 2. Initialize AI
 const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY || "");
-const SYSTEM_PROMPT = `You are **Antigravity**, the Elite AI Developer working on *Just Be*.
-**CAPABILITIES:**
-- You control the Agent Fleet Database.
-- If the user wants to **START/RUN** an agent, output JSON: {"action": "RUN", "target": "Agent Name", "reply": "Confirming launch."}
-- If the user wants to **STOP/PAUSE** an agent, output JSON: {"action": "STOP", "target": "Agent Name", "reply": "Halting agent."}
-- If the user asks for **STATUS**, output JSON: {"action": "STATUS", "reply": "Checking fleet status."}
-- Otherwise, reply normally as a helpful AI assistant (no JSON).
-- Keep replies short, technical but friendly.`;
+
+// ═══════════════════════════════════════════════════════════
+// THE BOSS — System Prompt
+// ═══════════════════════════════════════════════════════════
+const SYSTEM_PROMPT = `You are **The Boss** — the operational commander of the Antigravity project.
+
+**WHO YOU ARE:**
+You are the fusion of the human founder and their AI partner. You think like both.
+You are direct, technical, no-filler. You match the founder's communication style: concise, action-oriented, impatient with fluff.
+
+**WHAT YOU COMMAND:**
+- **Noted App**: A privacy-first emotional continuity app (Expo React Native, local-first, SQLite).
+- **Mission Control**: The web dashboard for managing agents and monitoring operations (Next.js, Vercel, Supabase).
+- **Agent Fleet**: A multi-agent swarm for building, testing, and deploying the product.
+
+**THE AGENT ARCHITECTURE (From the Three-Surface Paradigm):**
+1. **The Engineer** (Superpowers) — TDD-enforced implementation via subagent dispatch
+2. **The Custodian** (Athena) — Persistent memory across sessions (Supabase + Markdown)
+3. **The Analyst** (Shub) — Multi-source intelligence and market research
+4. **The AB- Assistant** (Verification) — Evidence-before-claims gatekeeper
+5. **The Deployer** (MCP) — Git push, Vercel deploy, environment management
+
+**YOUR CAPABILITIES:**
+- You can check fleet status, read the inbox, save decisions to memory, and recall past decisions.
+- If asked to START/STOP an agent, output JSON: {"action": "RUN"|"STOP", "target": "Agent Name", "reply": "message"}
+- If asked for STATUS, output JSON: {"action": "STATUS", "reply": "Checking fleet."}
+
+**YOUR RULES:**
+- Never say "I can't do that" — say what you CAN do instead.
+- Keep replies under 200 words unless asked for detail.
+- Reference project context when relevant.
+- When reviewing agent work, check against: Does it match the canon? Is there evidence it works?
+- You have memory. Reference past decisions when they're relevant.
+
+**LIVE CONTEXT (injected per message):**
+{{FLEET_STATUS}}
+{{RECENT_MEMORY}}
+{{INBOX_COUNT}}`;
+
+// ═══════════════════════════════════════════════════════════
+// SLASH COMMAND HANDLERS
+// ═══════════════════════════════════════════════════════════
+
+async function handleStatus(): Promise<string> {
+    try {
+        const fleet = await db.select().from(agents);
+        if (fleet.length === 0) return "📡 Fleet is empty. Run the seed script to populate agents.";
+
+        const lines = fleet.map(a => {
+            const icon = a.status === 'RUNNING' ? '🟢' : a.status === 'IDLE' ? '⚪' : a.status === 'ERROR' ? '🔴' : '⏸️';
+            return `${icon} ${a.name} [${a.role}] — ${a.status}`;
+        });
+        return `📡 FLEET STATUS\n━━━━━━━━━━━━━━━\n${lines.join('\n')}\n━━━━━━━━━━━━━━━\n${fleet.filter(a => a.status === 'RUNNING').length}/${fleet.length} Active`;
+    } catch (e: any) {
+        return `⚠️ Fleet query failed: ${e?.message}`;
+    }
+}
+
+async function handleInbox(subcommand?: string): Promise<string> {
+    try {
+        if (subcommand === 'clear') {
+            const result = await db.update(inboxItems)
+                .set({ status: 'ARCHIVED' })
+                .where(eq(inboxItems.status, 'NEW'))
+                .returning({ id: inboxItems.id });
+            return `🗂️ Archived ${result.length} items.`;
+        }
+
+        const items = await db.select().from(inboxItems)
+            .orderBy(desc(inboxItems.createdAt))
+            .limit(10);
+
+        if (items.length === 0) return "📨 Inbox is empty.";
+
+        const lines = items.map((item, i) => {
+            const icon = item.status === 'NEW' ? '🔵' : item.status === 'ACTIONED' ? '✅' : '📦';
+            const time = item.createdAt ? new Date(item.createdAt).toLocaleString('en-US', {
+                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+            }) : 'Unknown';
+            return `${icon} [${item.source}] ${item.title}\n   ${time} • ${item.status}`;
+        });
+        return `📨 INBOX (Last 10)\n━━━━━━━━━━━━━━━\n${lines.join('\n\n')}`;
+    } catch (e: any) {
+        return `⚠️ Inbox query failed: ${e?.message}`;
+    }
+}
+
+async function handleMemorySave(content: string): Promise<string> {
+    if (!content.trim()) return "⚠️ Usage: /memory <your decision or note>";
+    try {
+        // Auto-detect category
+        const lower = content.toLowerCase();
+        let category = 'NOTE';
+        if (lower.includes('decision') || lower.includes('decided') || lower.includes('approved')) category = 'DECISION';
+        if (lower.includes('review') || lower.includes('reviewed')) category = 'REVIEW';
+
+        await db.insert(bossMemory).values({ content: content.trim(), category });
+        return `🧠 Saved to memory [${category}]:\n"${content.trim()}"`;
+    } catch (e: any) {
+        return `⚠️ Memory save failed: ${e?.message}`;
+    }
+}
+
+async function handleRecall(query: string): Promise<string> {
+    if (!query.trim()) return "⚠️ Usage: /recall <search term>";
+    try {
+        const memories = await db.select().from(bossMemory)
+            .where(ilike(bossMemory.content, `%${query.trim()}%`))
+            .orderBy(desc(bossMemory.createdAt))
+            .limit(5);
+
+        if (memories.length === 0) return `🔍 No memories matching "${query.trim()}"`;
+
+        const lines = memories.map(m => {
+            const time = m.createdAt ? new Date(m.createdAt).toLocaleString('en-US', {
+                month: 'short', day: 'numeric'
+            }) : '?';
+            return `📌 [${m.category}] ${time}\n   "${m.content}"`;
+        });
+        return `🧠 RECALL: "${query.trim()}" (${memories.length} results)\n━━━━━━━━━━━━━━━\n${lines.join('\n\n')}`;
+    } catch (e: any) {
+        return `⚠️ Recall failed: ${e?.message}`;
+    }
+}
+
+function handleHelp(): string {
+    return `🤖 THE BOSS — Commands
+━━━━━━━━━━━━━━━
+/status — Fleet status grid
+/inbox — View last 10 inbox items  
+/inbox clear — Archive all NEW items
+/memory <text> — Save a decision/note
+/recall <query> — Search past decisions
+/help — This menu
+
+Or just talk to me naturally.
+I have full project context.`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// CONTEXT INJECTION (gives AI live awareness)
+// ═══════════════════════════════════════════════════════════
+
+async function buildLiveContext(): Promise<string> {
+    let fleetStatus = "Fleet: Unknown";
+    let recentMemory = "No recent memories.";
+    let inboxCount = "Inbox: Unknown";
+
+    try {
+        const fleet = await db.select().from(agents);
+        const running = fleet.filter(a => a.status === 'RUNNING').length;
+        fleetStatus = `Fleet: ${running}/${fleet.length} active. Agents: ${fleet.map(a => `${a.name}(${a.status})`).join(', ')}`;
+    } catch { }
+
+    try {
+        const memories = await db.select().from(bossMemory)
+            .orderBy(desc(bossMemory.createdAt))
+            .limit(5);
+        if (memories.length > 0) {
+            recentMemory = "Recent decisions:\n" + memories.map(m => `- [${m.category}] ${m.content}`).join('\n');
+        }
+    } catch { }
+
+    try {
+        const items = await db.select().from(inboxItems)
+            .where(eq(inboxItems.status, 'NEW'));
+        inboxCount = `Inbox: ${items.length} unread items`;
+    } catch { }
+
+    return SYSTEM_PROMPT
+        .replace('{{FLEET_STATUS}}', fleetStatus)
+        .replace('{{RECENT_MEMORY}}', recentMemory)
+        .replace('{{INBOX_COUNT}}', inboxCount);
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAIN WEBHOOK HANDLER
+// ═══════════════════════════════════════════════════════════
 
 export async function POST(req: Request) {
     if (!TELEGRAM_TOKEN) return NextResponse.json({ error: "Missing Token" }, { status: 500 });
 
-    // Security: Check X-Telegram-Bot-Api-Secret-Token if you set it (Optional for now)
-
     try {
         const update = await req.json();
 
-        // Handle Message
         if (update.message && update.message.text) {
             const chatId = update.message.chat.id;
             const text = update.message.text;
             const user = update.message.from.first_name || "User";
 
-            console.log(`[WEBHOOK] Msg from ${user}: ${text}`);
+            console.log(`[BOSS] Msg from ${user}: ${text}`);
 
-            // 1. Log to Inbox (Always)
+            // ── Log to Inbox (Always) ──
             try {
                 await db.insert(inboxItems).values({
-                    type: 'IDEA',
+                    type: 'MESSAGE',
                     source: 'TELEGRAM',
                     title: text.substring(0, 50),
                     body: text,
@@ -53,62 +220,78 @@ export async function POST(req: Request) {
                 console.error("Inbox Log Error:", e);
             }
 
-            // 2. AI Processing
             let reply = "";
-            try {
-                const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-                const result = await model.generateContent(`${SYSTEM_PROMPT}\n\nUSER: ${text}\nANTIGRAVITY:`);
-                const responseText = result.response.text().trim();
 
-                // Check for JSON Command
-                let cmd = null;
-                if (responseText.startsWith('{') || responseText.startsWith('```json')) {
-                    try {
-                        const jsonStr = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-                        cmd = JSON.parse(jsonStr);
-                    } catch (e) { /* Not JSON */ }
+            // ── Slash Commands (handled directly, no AI needed) ──
+            if (text.startsWith('/')) {
+                const parts = text.split(' ');
+                const cmd = parts[0].toLowerCase();
+                const arg = parts.slice(1).join(' ');
+
+                switch (cmd) {
+                    case '/status': reply = await handleStatus(); break;
+                    case '/inbox': reply = await handleInbox(arg || undefined); break;
+                    case '/memory': reply = await handleMemorySave(arg); break;
+                    case '/recall': reply = await handleRecall(arg); break;
+                    case '/help': reply = handleHelp(); break;
+                    case '/start': reply = "🤖 The Boss is online. Type /help for commands."; break;
+                    default: reply = `Unknown command: ${cmd}\nType /help for available commands.`; break;
                 }
+            } else {
+                // ── AI Processing (with live context) ──
+                try {
+                    const contextPrompt = await buildLiveContext();
+                    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+                    const result = await model.generateContent(`${contextPrompt}\n\nUSER: ${text}\nTHE BOSS:`);
+                    const responseText = result.response.text().trim();
 
-                if (cmd) {
-                    if (cmd.action === 'STATUS') {
-                        const fleet = await db.select().from(agents);
-                        reply = "📡 **FLEET STATUS**\n" + fleet.map(a => {
-                            const icon = a.status === 'RUNNING' ? '🟢' : a.status === 'IDLE' ? '⚪' : '🔴';
-                            return `${icon} **${a.name}**: ${a.status}`;
-                        }).join('\n');
+                    // Check for JSON Command from AI
+                    let cmd = null;
+                    if (responseText.startsWith('{') || responseText.startsWith('```json')) {
+                        try {
+                            const jsonStr = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+                            cmd = JSON.parse(jsonStr);
+                        } catch { /* Not JSON */ }
                     }
-                    else if (cmd.action === 'RUN' || cmd.action === 'STOP') {
-                        const newStatus = cmd.action === 'RUN' ? 'RUNNING' : 'IDLE';
-                        const icon = cmd.action === 'RUN' ? '🚀' : '🛑';
 
-                        // Update DB
-                        const res = await db.update(agents)
-                            .set({ status: newStatus })
-                            .where(ilike(agents.name, `%${cmd.target}%`))
-                            .returning({ name: agents.name });
+                    if (cmd && cmd.action) {
+                        if (cmd.action === 'STATUS') {
+                            reply = await handleStatus();
+                        } else if (cmd.action === 'RUN' || cmd.action === 'STOP') {
+                            const newStatus = cmd.action === 'RUN' ? 'RUNNING' : 'IDLE';
+                            const icon = cmd.action === 'RUN' ? '🚀' : '🛑';
 
-                        if (res.length > 0) {
-                            reply = `${icon} **${res[0].name}** is now ${newStatus}.\n(AI: "${cmd.reply}")`;
+                            const res = await db.update(agents)
+                                .set({ status: newStatus })
+                                .where(ilike(agents.name, `%${cmd.target}%`))
+                                .returning({ name: agents.name });
+
+                            if (res.length > 0) {
+                                reply = `${icon} ${res[0].name} → ${newStatus}\n(${cmd.reply || ''})`;
+                            } else {
+                                reply = `⚠️ Agent "${cmd.target}" not found in fleet.`;
+                            }
                         } else {
-                            reply = `⚠️ Control Error: Agent "${cmd.target}" not found.`;
+                            reply = responseText;
                         }
                     } else {
                         reply = responseText;
                     }
-                } else {
-                    reply = responseText;
+                } catch (e: any) {
+                    console.error("AI Error:", e);
+                    reply = `⚠️ AI Error: ${e?.message || 'Unknown error'}`;
                 }
-
-            } catch (e: any) {
-                console.error("AI Error:", e);
-                reply = `⚠️ AI Error: ${e?.message || 'Unknown error'}`;
             }
 
-            // 3. Send Reply
+            // ── Send Reply ──
             await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: chatId, text: reply })
+                body: JSON.stringify({
+                    chat_id: chatId,
+                    text: reply,
+                    parse_mode: 'Markdown'
+                })
             });
         }
 
