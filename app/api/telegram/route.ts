@@ -241,7 +241,7 @@ export async function POST(req: Request) {
                 // ── AI Processing (with live context) ──
                 try {
                     const contextPrompt = await buildLiveContext();
-                    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+                    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                     const result = await model.generateContent(`${contextPrompt}\n\nUSER: ${text}\nTHE BOSS:`);
                     const responseText = result.response.text().trim();
 
