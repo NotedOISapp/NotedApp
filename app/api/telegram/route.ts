@@ -4,6 +4,9 @@ import { db } from "@/src/db";
 import { agents, inboxItems } from "@/src/db/schema";
 import { ilike } from "drizzle-orm";
 
+// Vercel Hobby max timeout (prevents early kill during AI calls)
+export const maxDuration = 60;
+
 // 1. Env Vars
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
@@ -53,7 +56,7 @@ export async function POST(req: Request) {
             // 2. AI Processing
             let reply = "";
             try {
-                const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+                const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
                 const result = await model.generateContent(`${SYSTEM_PROMPT}\n\nUSER: ${text}\nANTIGRAVITY:`);
                 const responseText = result.response.text().trim();
 
@@ -96,9 +99,9 @@ export async function POST(req: Request) {
                     reply = responseText;
                 }
 
-            } catch (e) {
+            } catch (e: any) {
                 console.error("AI Error:", e);
-                reply = "⚠️ Cloud Cognitive Error.";
+                reply = `⚠️ AI Error: ${e?.message || 'Unknown error'}`;
             }
 
             // 3. Send Reply
