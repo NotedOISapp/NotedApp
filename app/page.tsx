@@ -6,9 +6,18 @@ import { revalidatePath } from "next/cache";
 export const dynamic = 'force-dynamic'; // Always fetch fresh data
 
 export default async function Home() {
-  // 1. Fetch Data
-  const fleet = await db.select().from(agents).orderBy(asc(agents.name));
-  const recentInbox = await db.select().from(inboxItems).orderBy(desc(inboxItems.createdAt)).limit(5);
+  // 1. Fetch Data (with error handling for Vercel)
+  let fleet: any[] = [];
+  let recentInbox: any[] = [];
+  let dbError = false;
+
+  try {
+    fleet = await db.select().from(agents).orderBy(asc(agents.name));
+    recentInbox = await db.select().from(inboxItems).orderBy(desc(inboxItems.createdAt)).limit(5);
+  } catch (e) {
+    console.error("DB Query Error:", e);
+    dbError = true;
+  }
 
   // 2. Metrics
   const activeAgents = fleet.filter(a => a.status === 'RUNNING').length;
@@ -78,7 +87,7 @@ export default async function Home() {
                 <div className="flex justify-between items-start mb-4">
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${agent.status === 'RUNNING' ? 'bg-emerald-500/10 text-emerald-400' :
-                        agent.status === 'ERROR' ? 'bg-red-500/10 text-red-400' : 'bg-slate-800 text-slate-500'
+                      agent.status === 'ERROR' ? 'bg-red-500/10 text-red-400' : 'bg-slate-800 text-slate-500'
                       }`}>
                       {agent.status === 'RUNNING' ? '⚡' : agent.status === 'ERROR' ? '❌' : '💤'}
                     </div>
