@@ -5,6 +5,7 @@ import { desc } from "drizzle-orm";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
+export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export default async function JournalPage() {
