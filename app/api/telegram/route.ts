@@ -284,15 +284,34 @@ export async function POST(req: Request) {
             }
 
             // ── Send Reply ──
-            await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    chat_id: chatId,
-                    text: reply,
-                    parse_mode: 'Markdown'
-                })
-            });
+            if (!reply) reply = "⚠️ No response generated.";
+            try {
+                const sendRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: chatId,
+                        text: reply
+                    })
+                });
+                const sendData = await sendRes.json();
+                if (!sendData.ok) {
+                    console.error("Telegram Send Error:", sendData);
+                    // Retry with truncated message if too long
+                    if (reply.length > 4000) {
+                        await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                chat_id: chatId,
+                                text: reply.substring(0, 4000) + "\n\n[truncated]"
+                            })
+                        });
+                    }
+                }
+            } catch (sendErr) {
+                console.error("Send Fetch Error:", sendErr);
+            }
         }
 
         return NextResponse.json({ ok: true });
