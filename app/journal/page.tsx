@@ -31,7 +31,7 @@ export default async function JournalPage() {
                                             {mem.category}
                                         </Badge>
                                         <span className="text-xs text-zinc-500">
-                                            {new Date(mem.createdAt).toLocaleString()}
+                                            {mem.createdAt ? new Date(mem.createdAt).toLocaleString() : 'Just now'}
                                         </span>
                                     </div>
                                     <p className="text-zinc-200 whitespace-pre-wrap">{mem.content}</p>
