@@ -8,14 +8,12 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Connection String from Env
-const connectionString = process.env.DATABASE_URL;
-
-if (!connectionString) {
-    throw new Error('DATABASE_URL is not defined');
-}
+// Connection String from Env (fallback to dummy to prevent module-level crash)
+const connectionString = process.env.DATABASE_URL || "postgres://placeholder:placeholder@localhost:5432/placeholder";
 
 // Client - SSL required for Supabase from Vercel
 const client = postgres(connectionString, {
     ssl: { rejectUnauthorized: false },
+    prepare: false, // Required for Transaction Pooler (6543), harmless for Session (5432)
 });
 export const db = drizzle(client, { schema });
