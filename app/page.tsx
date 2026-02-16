@@ -1,19 +1,29 @@
-import { db } from "@/src/db";
-import { agents, inboxItems } from "@/src/db/schema";
-import { asc, desc, eq } from "drizzle-orm";
+import { supabase } from "@/src/db/supabase";
 import { revalidatePath } from "next/cache";
 
-export const dynamic = 'force-dynamic'; // Always fetch fresh data
+export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  // 1. Fetch Data (with error handling for Vercel)
+  // 1. Fetch Data via Supabase REST API (HTTPS — no PostgreSQL connection needed)
   let fleet: any[] = [];
   let recentInbox: any[] = [];
   let dbError = false;
 
   try {
-    fleet = await db.select().from(agents).orderBy(asc(agents.name));
-    recentInbox = await db.select().from(inboxItems).orderBy(desc(inboxItems.createdAt)).limit(5);
+    const { data: agentsData, error: agentsErr } = await supabase
+      .from('agents')
+      .select('*')
+      .order('name');
+    if (agentsErr) throw agentsErr;
+    fleet = agentsData || [];
+
+    const { data: inboxData, error: inboxErr } = await supabase
+      .from('inbox_items')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(5);
+    if (inboxErr) throw inboxErr;
+    recentInbox = inboxData || [];
   } catch (e) {
     console.error("DB Query Error:", e);
     dbError = true;
@@ -66,8 +76,8 @@ export default async function Home() {
 
         <div className="bg-slate-900/50 border border-white/5 p-6 rounded-2xl relative overflow-hidden">
           <div className="text-slate-500 text-xs uppercase tracking-widest mb-1">Database</div>
-          <div className="text-4xl font-light text-emerald-400">CONN</div>
-          <div className="text-xs text-slate-500 mt-2">Write Mode: Active</div>
+          <div className={`text-4xl font-light ${dbError ? 'text-red-400' : 'text-emerald-400'}`}>{dbError ? 'ERR' : 'CONN'}</div>
+          <div className="text-xs text-slate-500 mt-2">{dbError ? 'Connection Failed' : 'Write Mode: Active'}</div>
         </div>
       </div>
 
@@ -138,7 +148,7 @@ export default async function Home() {
                       {item.source}
                     </span>
                     <span className="text-xs text-slate-600">
-                      {item.createdAt ? new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Now'}
+                      {item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Now'}
                     </span>
                   </div>
                   <p className="text-sm text-slate-300 line-clamp-2">{item.body || item.title}</p>

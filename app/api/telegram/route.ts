@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { db } from "@/src/db";
-import { agents, inboxItems, bossMemory } from "@/src/db/schema";
-import { ilike, desc, eq } from "drizzle-orm";
+import { supabase } from "@/src/db/supabase";
 
 // Vercel Hobby max timeout
 export const maxDuration = 60;
@@ -58,8 +56,9 @@ You are direct, technical, no-filler. You match the founder's communication styl
 
 async function handleStatus(): Promise<string> {
     try {
-        const fleet = await db.select().from(agents);
-        if (fleet.length === 0) return "📡 Fleet is empty. Run the seed script to populate agents.";
+        const { data: fleet, error } = await supabase.from('agents').select('*');
+        if (error) throw error;
+        if (!fleet || fleet.length === 0) return "📡 Fleet is empty. Run the seed script to populate agents.";
 
         const lines = fleet.map(a => {
             const icon = a.status === 'RUNNING' ? '🟢' : a.status === 'IDLE' ? '⚪' : a.status === 'ERROR' ? '🔴' : '⏸️';
@@ -74,22 +73,27 @@ async function handleStatus(): Promise<string> {
 async function handleInbox(subcommand?: string): Promise<string> {
     try {
         if (subcommand === 'clear') {
-            const result = await db.update(inboxItems)
-                .set({ status: 'ARCHIVED' })
-                .where(eq(inboxItems.status, 'NEW'))
-                .returning({ id: inboxItems.id });
-            return `🗂️ Archived ${result.length} items.`;
+            const { data: result, error } = await supabase
+                .from('inbox_items')
+                .update({ status: 'ARCHIVED' })
+                .eq('status', 'NEW')
+                .select('id');
+            if (error) throw error;
+            return `🗂️ Archived ${result?.length || 0} items.`;
         }
 
-        const items = await db.select().from(inboxItems)
-            .orderBy(desc(inboxItems.createdAt))
+        const { data: items, error } = await supabase
+            .from('inbox_items')
+            .select('*')
+            .order('created_at', { ascending: false })
             .limit(10);
+        if (error) throw error;
 
-        if (items.length === 0) return "📨 Inbox is empty.";
+        if (!items || items.length === 0) return "📨 Inbox is empty.";
 
-        const lines = items.map((item, i) => {
+        const lines = items.map((item) => {
             const icon = item.status === 'NEW' ? '🔵' : item.status === 'ACTIONED' ? '✅' : '📦';
-            const time = item.createdAt ? new Date(item.createdAt).toLocaleString('en-US', {
+            const time = item.created_at ? new Date(item.created_at).toLocaleString('en-US', {
                 month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
             }) : 'Unknown';
             return `${icon} [${item.source}] ${item.title}\n   ${time} • ${item.status}`;
@@ -109,7 +113,8 @@ async function handleMemorySave(content: string): Promise<string> {
         if (lower.includes('decision') || lower.includes('decided') || lower.includes('approved')) category = 'DECISION';
         if (lower.includes('review') || lower.includes('reviewed')) category = 'REVIEW';
 
-        await db.insert(bossMemory).values({ content: content.trim(), category });
+        const { error } = await supabase.from('boss_memory').insert({ content: content.trim(), category });
+        if (error) throw error;
         return `🧠 Saved to memory [${category}]:\n"${content.trim()}"`;
     } catch (e: any) {
         return `⚠️ Memory save failed: ${e?.message}`;
@@ -119,15 +124,18 @@ async function handleMemorySave(content: string): Promise<string> {
 async function handleRecall(query: string): Promise<string> {
     if (!query.trim()) return "⚠️ Usage: /recall <search term>";
     try {
-        const memories = await db.select().from(bossMemory)
-            .where(ilike(bossMemory.content, `%${query.trim()}%`))
-            .orderBy(desc(bossMemory.createdAt))
+        const { data: memories, error } = await supabase
+            .from('boss_memory')
+            .select('*')
+            .ilike('content', `%${query.trim()}%`)
+            .order('created_at', { ascending: false })
             .limit(5);
+        if (error) throw error;
 
-        if (memories.length === 0) return `🔍 No memories matching "${query.trim()}"`;
+        if (!memories || memories.length === 0) return `🔍 No memories matching "${query.trim()}"`;
 
         const lines = memories.map(m => {
-            const time = m.createdAt ? new Date(m.createdAt).toLocaleString('en-US', {
+            const time = m.created_at ? new Date(m.created_at).toLocaleString('en-US', {
                 month: 'short', day: 'numeric'
             }) : '?';
             return `📌 [${m.category}] ${time}\n   "${m.content}"`;
@@ -162,24 +170,32 @@ async function buildLiveContext(): Promise<string> {
     let inboxCount = "Inbox: Unknown";
 
     try {
-        const fleet = await db.select().from(agents);
-        const running = fleet.filter(a => a.status === 'RUNNING').length;
-        fleetStatus = `Fleet: ${running}/${fleet.length} active. Agents: ${fleet.map(a => `${a.name}(${a.status})`).join(', ')}`;
+        const { data: fleet } = await supabase.from('agents').select('*');
+        if (fleet) {
+            const running = fleet.filter(a => a.status === 'RUNNING').length;
+            fleetStatus = `Fleet: ${running}/${fleet.length} active. Agents: ${fleet.map(a => `${a.name}(${a.status})`).join(', ')}`;
+        }
     } catch { }
 
     try {
-        const memories = await db.select().from(bossMemory)
-            .orderBy(desc(bossMemory.createdAt))
+        const { data: memories } = await supabase
+            .from('boss_memory')
+            .select('*')
+            .order('created_at', { ascending: false })
             .limit(5);
-        if (memories.length > 0) {
+        if (memories && memories.length > 0) {
             recentMemory = "Recent decisions:\n" + memories.map(m => `- [${m.category}] ${m.content}`).join('\n');
         }
     } catch { }
 
     try {
-        const items = await db.select().from(inboxItems)
-            .where(eq(inboxItems.status, 'NEW'));
-        inboxCount = `Inbox: ${items.length} unread items`;
+        const { data: items } = await supabase
+            .from('inbox_items')
+            .select('id')
+            .eq('status', 'NEW');
+        if (items) {
+            inboxCount = `Inbox: ${items.length} unread items`;
+        }
     } catch { }
 
     return SYSTEM_PROMPT
@@ -207,7 +223,7 @@ export async function POST(req: Request) {
 
             // ── Log to Inbox (Always) ──
             try {
-                await db.insert(inboxItems).values({
+                await supabase.from('inbox_items').insert({
                     type: 'MESSAGE',
                     source: 'TELEGRAM',
                     title: text.substring(0, 50),
@@ -261,12 +277,15 @@ export async function POST(req: Request) {
                             const newStatus = cmd.action === 'RUN' ? 'RUNNING' : 'IDLE';
                             const icon = cmd.action === 'RUN' ? '🚀' : '🛑';
 
-                            const res = await db.update(agents)
-                                .set({ status: newStatus })
-                                .where(ilike(agents.name, `%${cmd.target}%`))
-                                .returning({ name: agents.name });
+                            const { data: res, error } = await supabase
+                                .from('agents')
+                                .update({ status: newStatus })
+                                .ilike('name', `%${cmd.target}%`)
+                                .select('name');
 
-                            if (res.length > 0) {
+                            if (error) throw error;
+
+                            if (res && res.length > 0) {
                                 reply = `${icon} ${res[0].name} → ${newStatus}\n(${cmd.reply || ''})`;
                             } else {
                                 reply = `⚠️ Agent "${cmd.target}" not found in fleet.`;
