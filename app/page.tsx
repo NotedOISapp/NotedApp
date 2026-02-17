@@ -1,6 +1,7 @@
 import { supabase } from "@/src/db/supabase";
 import { revalidatePath } from "next/cache";
 import Link from 'next/link';
+import { DeploymentQR } from "@/components/deployment-qr";
 
 export const dynamic = 'force-dynamic';
 
@@ -166,6 +167,7 @@ export default async function Home() {
 
         {/* Right: Inbox Feed */}
         <div className="space-y-4 md:space-y-6">
+          <DeploymentQR />
           <h3 className="text-lg font-medium text-slate-200">📨 Signal Intake</h3>
           <div className="bg-slate-900/40 border border-white/5 rounded-xl divide-y divide-white/5">
             {recentInbox.length === 0 ? (
