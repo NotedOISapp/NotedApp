@@ -22,6 +22,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <NavItem href="/hub" label="The Hub" icon="📡" />
                 <NavItem href="/journal" label="Journal" icon="📔" />
                 <NavItem href="/agents" label="Agents" icon="🤖" />
+                <NavItem href="/status" label="Status" icon="📊" />
                 <NavItem href="/workshop" label="Workshop" icon="🔨" />
               </nav>
             </div>
@@ -56,7 +57,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <MobileNavItem href="/" label="Home" icon="⚡" />
             <MobileNavItem href="/chat" label="Chat" icon="💬" />
             <MobileNavItem href="/agents" label="Agents" icon="🤖" />
-            <MobileNavItem href="/journal" label="Journal" icon="📔" />
+            <MobileNavItem href="/status" label="Status" icon="📊" />
             <MobileNavItem href="/settings" label="Settings" icon="⚙️" />
           </nav>
         </div>
