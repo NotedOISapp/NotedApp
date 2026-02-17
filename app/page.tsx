@@ -1,5 +1,6 @@
 import { supabase } from "@/src/db/supabase";
 import { revalidatePath } from "next/cache";
+import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
 
@@ -122,7 +123,7 @@ export default async function Home() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {fleet.map(agent => (
-              <div key={agent.id} className="group bg-slate-900/40 border border-white/5 hover:border-white/10 transition-all p-5 rounded-xl">
+              <Link href={`/agents?focus=${encodeURIComponent(agent.name)}`} key={agent.id} className="block group bg-slate-900/40 border border-white/5 hover:border-white/10 transition-all p-5 rounded-xl hover:bg-white/5 active:scale-[0.98] duration-200">
                 <div className="flex justify-between items-start mb-4">
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${agent.status === 'RUNNING' ? 'bg-emerald-500/10 text-emerald-400' :
@@ -131,7 +132,7 @@ export default async function Home() {
                       {agent.status === 'RUNNING' ? '⚡' : agent.status === 'ERROR' ? '❌' : '💤'}
                     </div>
                     <div>
-                      <div className="font-medium text-slate-200">{agent.name}</div>
+                      <div className="font-medium text-slate-200 group-hover:text-white transition-colors">{agent.name}</div>
                       <div className="text-xs text-slate-500 font-mono">{agent.role}</div>
                     </div>
                   </div>
@@ -142,7 +143,7 @@ export default async function Home() {
                 </div>
 
                 {/* Task specific UI */}
-                <div className="bg-black/20 rounded-lg p-3 min-h-[60px] flex items-center">
+                <div className="bg-black/20 rounded-lg p-3 min-h-[60px] flex items-center group-hover:bg-black/40 transition-colors">
                   {agent.status === 'RUNNING' ? (
                     <p className="text-xs text-emerald-300/80 font-mono animate-pulse">
                       ▶ {agent.current_task || 'Awaiting orders...'}
@@ -151,7 +152,7 @@ export default async function Home() {
                     <p className="text-xs text-slate-600 italic">No active instructions.</p>
                   )}
                 </div>
-              </div>
+              </Link>
             ))}
 
             {fleet.length === 0 && (
