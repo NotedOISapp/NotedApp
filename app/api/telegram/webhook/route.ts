@@ -6,7 +6,7 @@ const GOOGLE_API_KEY = (process.env.GOOGLE_API_KEY || '').trim();
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY || '');
-const MODELS_TO_TRY = ["gemini-2.5-flash", "models/gemini-2.5-flash", "gemini-1.5-flash", "gemini-pro"];
+const MODELS_TO_TRY = ["gemini-2.0-flash"];
 
 const SYSTEM_PROMPT = `You are Mission Control, the AI interface for the **Noted App Swarm**. 
 You are speaking to the Commander (User).

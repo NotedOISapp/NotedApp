@@ -14,13 +14,25 @@ Endpoints:
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
+import asyncio
 from crusher import crusher, SmartCrusher
 from config import PORT
+from worker import agent_loop
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifecycle manager: Start the agent worker loop on startup."""
+    task = asyncio.create_task(agent_loop())
+    yield
+    # Cancel task on shutdown if needed
+    task.cancel()
 
 app = FastAPI(
     title="Antigravity Agent Engine",
     description="Python backend for agent intelligence — compression, memory, orchestration",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # CORS — allow Next.js dashboard to call this service

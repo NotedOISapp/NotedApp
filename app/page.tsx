@@ -2,6 +2,7 @@ import { supabase } from "@/src/db/supabase";
 import { revalidatePath } from "next/cache";
 import Link from 'next/link';
 import { DeploymentQR } from "@/components/deployment-qr";
+import { SimulateButton } from "@/components/simulate-button";
 
 export const dynamic = 'force-dynamic';
 
@@ -56,18 +57,21 @@ export default async function Home() {
             R.E.A.C.T. System • Vercel Region: iad1 • DB: Supabase
           </p>
         </div>
-        <form action={async () => {
-          'use server';
-          revalidatePath('/');
-        }}>
-          <button className="w-full md:w-auto px-4 py-3 md:py-2 bg-white/5 border border-white/10 rounded-lg text-xs font-mono text-emerald-400 hover:bg-emerald-500/10 transition-colors flex items-center justify-center gap-2 active:scale-95 duration-200">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            SYSTEM ONLINE (Refresh)
-          </button>
-        </form>
+        <div className="flex gap-2 w-full md:w-auto">
+          <SimulateButton />
+          <form action={async () => {
+            'use server';
+            revalidatePath('/');
+          }}>
+            <button className="w-full md:w-auto px-4 py-3 md:py-2 bg-white/5 border border-white/10 rounded-lg text-xs font-mono text-emerald-400 hover:bg-emerald-500/10 transition-colors flex items-center justify-center gap-2 active:scale-95 duration-200">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              REFRESH
+            </button>
+          </form>
+        </div>
       </div>
 
       {/* KPI Grid */}

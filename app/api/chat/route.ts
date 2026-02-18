@@ -107,7 +107,7 @@ export async function POST(req: Request) {
         }
 
         // 5. Generate AI Reply
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
         const systemInstruction = PERSONAS[targetAgent] || PERSONAS['THE SWARM'];
 
         const chat = model.startChat({

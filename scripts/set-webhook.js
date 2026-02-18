@@ -1,54 +1,42 @@
+
 const fs = require('fs');
 const path = require('path');
-const readline = require('readline');
 
-// Load Env
+// Load .env
 const envPath = path.resolve(__dirname, '../.env');
-require('dotenv').config({ path: envPath });
-
-const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-});
-
-const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-
-if (!TELEGRAM_TOKEN || TELEGRAM_TOKEN.includes('Hidden')) {
-    console.error("❌ Valid TELEGRAM_BOT_TOKEN not found in .env");
+if (!fs.existsSync(envPath)) {
+    console.error("❌ .env not found");
     process.exit(1);
 }
 
-console.log("🔗 SETUP CLOUD WEBHOOK");
-console.log("To run the bot 24/7 on Vercel, we need to tell Telegram where to send messages.");
-console.log("Your Vercel URL should look like: https://mission-control-xyz.vercel.app");
+const env = fs.readFileSync(envPath, 'utf8');
+const tokenMatch = env.match(/TELEGRAM_BOT_TOKEN=([^\r\n]+)/);
+if (!tokenMatch) {
+    console.error("❌ TELEGRAM_BOT_TOKEN not found in .env");
+    process.exit(1);
+}
+const token = tokenMatch[1].replace(/"/g, '');
 
-rl.question('Please paste your Vercel Project URL (e.g., https://myapp.vercel.app): ', async (urlInput) => {
-    let url = urlInput.trim();
-    if (url.endsWith('/')) url = url.slice(0, -1);
+const args = process.argv.slice(2);
+const vercelUrl = args[0];
 
-    if (!url.startsWith('https://')) {
-        console.error("❌ URL must start with https://");
-        rl.close();
-        return;
-    }
+if (!vercelUrl) {
+    console.error("❌ Usage: node set-webhook.js <YOUR_VERCEL_URL>");
+    console.error("   Example: node set-webhook.js https://mission-control-xyz.vercel.app");
+    process.exit(1);
+}
 
-    const webhookUrl = `${url}/api/telegram`;
-    console.log(`\nSetting Webhook to: ${webhookUrl}`);
+// Ensure https
+const url = vercelUrl.startsWith('http') ? vercelUrl : `https://${vercelUrl}`;
+const webhookUrl = `${url}/api/telegram`;
 
+(async () => {
+    console.log(`🔌 Setting Webhook to: ${webhookUrl}`);
     try {
-        const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook?url=${webhookUrl}`);
+        const res = await fetch(`https://api.telegram.org/bot${token}/setWebhook?url=${webhookUrl}`);
         const data = await res.json();
-
-        if (data.ok) {
-            console.log("✅ WEBHOOK SET SUCCESSFULLY!");
-            console.log("Telegram will now push messages to your Vercel app.");
-            console.log("NOTE: You must 'git push' the latest code (route.ts) to Vercel for this to work.");
-            console.log("NOTE: Ensure TELEGRAM_BOT_TOKEN and GOOGLE_API_KEY are set in Vercel Project Settings.");
-        } else {
-            console.error("❌ Webhook Error:", data.description);
-        }
+        console.log("Response:", data);
     } catch (e) {
-        console.error("❌ Network Error:", e.message);
+        console.error("❌ Error:", e.message);
     }
-    rl.close();
-});
+})();
