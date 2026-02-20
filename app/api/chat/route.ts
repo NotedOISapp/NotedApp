@@ -147,6 +147,11 @@ export async function POST(req: Request) {
 
     } catch (e: any) {
         console.error("Chat API Error:", e);
+        if (e.message.includes('429') || e.message.includes('quota')) {
+            return NextResponse.json({
+                error: "⚠️ AI Overload (Rate Limit). Please wait a moment."
+            }, { status: 429 });
+        }
         return NextResponse.json({ error: e.message }, { status: 500 });
     }
 }
